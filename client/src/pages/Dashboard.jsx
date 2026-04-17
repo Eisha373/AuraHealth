@@ -1,94 +1,142 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import toast from 'react-hot-toast'
+
+const api = (route, token) =>
+  axios.get(`http://localhost:5000/api/${route}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
 
 export default function Dashboard() {
-  const navigate = useNavigate()
-  const [user, setUser] = useState(null)
+  const navigate   = useNavigate()
+  const token      = localStorage.getItem('token')
+  const [sleep,  setSleep]  = useState([])
+  const [water,  setWater]  = useState([])
+  const [mood,   setMood]   = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const token = localStorage.getItem('token')
-        if (!token) {
-          navigate('/')
-          return
-        }
-        const res = await axios.get('http://localhost:5000/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        setUser(res.data)
-      } catch (err) {
-        toast.error('Session expired, please login again')
-        navigate('/')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchUser()
+    if (!token) return navigate('/login')
+    Promise.all([
+      api('sleep', token),
+      api('water', token),
+      api('mood',  token),
+    ]).then(([s, w, m]) => {
+      setSleep(s.data)
+      setWater(w.data)
+      setMood(m.data)
+    }).finally(() => setLoading(false))
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    toast.success('Logged out!')
-    navigate('/')
-  }
+  const latest = (arr) => arr[0] ?? null
+  const avgSleep = sleep.length
+    ? (sleep.reduce((a, b) => a + b.hours, 0) / sleep.length).toFixed(1)
+    : '—'
+  const totalWater = water[0]?.glasses ?? '—'
+  const latestMood = mood[0]?.mood ?? '—'
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-indigo-600 text-xl font-semibold">Loading...</p>
-      </div>
-    )
-  }
+  const moodEmoji = { Awful:'😞', Bad:'😕', Neutral:'😐', Good:'🙂', Great:'😄' }
+
+  const cards = [
+    {
+      title: 'Sleep',
+      icon: '😴',
+      stat: avgSleep === '—' ? '—' : `${avgSleep}h`,
+      sub: 'avg last 7 days',
+      link: '/sleep',
+      color: 'bg-indigo-50 border-indigo-200',
+      btn: 'bg-indigo-600 hover:bg-indigo-700',
+    },
+    {
+      title: 'Water',
+      icon: '💧',
+      stat: totalWater === '—' ? '—' : `${totalWater} glasses`,
+      sub: 'last entry',
+      link: '/water',
+      color: 'bg-blue-50 border-blue-200',
+      btn: 'bg-blue-500 hover:bg-blue-600',
+    },
+    {
+      title: 'Mood',
+      icon: moodEmoji[latestMood] ?? '🎭',
+      stat: latestMood,
+      sub: 'last logged mood',
+      link: '/mood',
+      color: 'bg-purple-50 border-purple-200',
+      btn: 'bg-purple-600 hover:bg-purple-700',
+    },
+  ]
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
-      <nav className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
+      <nav className="bg-white shadow px-6 py-4 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-indigo-600">AuraHealth</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-gray-600">Hello, {user?.name}!</span>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition"
-          >
-            Logout
-          </button>
-        </div>
+        <button
+          onClick={() => { localStorage.removeItem('token'); navigate('/login') }}
+          className="text-sm text-red-500 hover:underline"
+        >
+          Logout
+        </button>
       </nav>
 
-      {/* Dashboard Content */}
-      <div className="max-w-6xl mx-auto p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Dashboard</h2>
+      <div className="max-w-3xl mx-auto p-6">
+        <h2 className="text-2xl font-semibold text-gray-800 mb-1">Your Health Dashboard</h2>
+        <p className="text-gray-500 mb-8">Track, log, and improve every day 💪</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-2xl shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">Health Records</h3>
-            <p className="text-gray-500 text-sm">View and manage your health records</p>
-            <button className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition w-full">
-              View Records
-            </button>
+        {loading ? (
+          <div className="text-center text-gray-400 py-20 text-lg">Loading your data...</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            {cards.map((c) => (
+              <div key={c.title} className={`rounded-2xl border p-5 ${c.color} flex flex-col gap-3`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-3xl">{c.icon}</span>
+                  <span className="text-lg font-semibold text-gray-700">{c.title}</span>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-gray-800">{c.stat}</p>
+                  <p className="text-sm text-gray-500">{c.sub}</p>
+                </div>
+                <Link
+                  to={c.link}
+                  className={`mt-auto text-center text-white text-sm py-2 rounded-lg font-medium transition ${c.btn}`}
+                >
+                  Log {c.title}
+                </Link>
+              </div>
+            ))}
           </div>
+        )}
 
-          <div className="bg-white rounded-2xl shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">AI Health Chat</h3>
-            <p className="text-gray-500 text-sm">Chat with AI for health advice</p>
-            <button className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition w-full">
-              Start Chat
-            </button>
+        {/* Recent logs */}
+        {!loading && sleep.length > 0 && (
+          <div className="mt-10">
+            <h3 className="text-lg font-semibold text-gray-700 mb-3">Recent Sleep Logs</h3>
+            <div className="bg-white rounded-2xl shadow divide-y">
+              {sleep.slice(0, 5).map((s) => (
+                <div key={s._id} className="flex justify-between px-5 py-3 text-sm text-gray-600">
+                  <span>{new Date(s.createdAt).toLocaleDateString()}</span>
+                  <span>{s.hours}h — {s.quality}</span>
+                </div>
+              ))}
+            </div>
           </div>
+        )}
 
-          <div className="bg-white rounded-2xl shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">Appointments</h3>
-            <p className="text-gray-500 text-sm">Schedule and manage appointments</p>
-            <button className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition w-full">
-              Book Appointment
-            </button>
+        {!loading && mood.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-gray-700 mb-3">Recent Mood Logs</h3>
+            <div className="bg-white rounded-2xl shadow divide-y">
+              {mood.slice(0, 5).map((m) => (
+                <div key={m._id} className="flex justify-between px-5 py-3 text-sm text-gray-600">
+                  <span>{new Date(m.createdAt).toLocaleDateString()}</span>
+                  <span>{moodEmoji[m.mood]} {m.mood} {m.note && `— ${m.note}`}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
